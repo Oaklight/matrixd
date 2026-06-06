@@ -36,14 +36,13 @@ classifiers = [
 
 dependencies = [
     "httpx>=0.27",
-    "pyyaml>=6.0",
-    "click>=8.0",
 ]
 
 [project.optional-dependencies]
+yaml = ["pyyaml>=6.0"]
 mcp = ["mcp>=1.0"]
 api = ["fastapi>=0.110", "uvicorn>=0.29"]
-full = ["matrixd[mcp,api]"]
+full = ["matrixd[yaml,mcp,api]"]
 dev = [
     "matrixd[full]",
     "pytest>=8.0",

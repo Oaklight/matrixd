@@ -10,81 +10,112 @@ Commands:
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import logging
 import sys
-from pathlib import Path
-
-import click
 
 from .core.config import load_config
 
 
-@click.group()
-@click.option(
-    "-c",
-    "--config",
-    "config_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Config file path (default: auto-detect).",
-)
-@click.option("-v", "--verbose", is_flag=True, help="Verbose logging.")
-@click.pass_context
-def main(ctx: click.Context, config_path: str | None, verbose: bool) -> None:
+def main(argv: list[str] | None = None) -> None:
     """matrixd — Matrix agent daemon."""
+    parser = argparse.ArgumentParser(
+        prog="matrixd",
+        description="Matrix agent daemon — listener, tools, and hooks for AI agents.",
+    )
+    parser.add_argument(
+        "-c", "--config", dest="config_path", default=None,
+        help="Config file path (default: auto-detect).",
+    )
+    parser.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="Verbose logging.",
+    )
+
+    sub = parser.add_subparsers(dest="command")
+
+    # whoami
+    sub.add_parser("whoami", help="Verify Matrix credentials.")
+
+    # send
+    send_p = sub.add_parser("send", help="Send a message to a room.")
+    send_p.add_argument("room_id", help="Target room ID.")
+    send_p.add_argument("message", help="Message body.")
+    send_p.add_argument("--msgtype", default="m.text", help="Message type.")
+
+    # rooms
+    sub.add_parser("rooms", help="List joined rooms with names.")
+
+    # listen
+    listen_p = sub.add_parser("listen", help="Run the /sync listener with policy filtering.")
+    listen_p.add_argument(
+        "--delivery", dest="delivery_mode",
+        choices=["stdout", "webhook", "exec"], default=None,
+        help="Override delivery mode.",
+    )
+
+    # serve
+    serve_p = sub.add_parser("serve", help="Start MCP or REST tool server.")
+    serve_p.add_argument(
+        "--mode", choices=["mcp", "rest"], default="mcp",
+        help="Server mode.",
+    )
+    serve_p.add_argument("--host", default=None, help="Bind host.")
+    serve_p.add_argument("--port", type=int, default=None, help="Bind port.")
+
+    args = parser.parse_args(argv)
+
     logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
+        level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    ctx.ensure_object(dict)
-    ctx.obj["config_path"] = config_path
-    ctx.obj["verbose"] = verbose
+
+    if args.command is None:
+        parser.print_help()
+        sys.exit(1)
+
+    handler = {
+        "whoami": _cmd_whoami,
+        "send": _cmd_send,
+        "rooms": _cmd_rooms,
+        "listen": _cmd_listen,
+        "serve": _cmd_serve,
+    }[args.command]
+
+    handler(args)
 
 
-@main.command()
-@click.pass_context
-def whoami(ctx: click.Context) -> None:
-    """Verify Matrix credentials."""
-
+def _cmd_whoami(args: argparse.Namespace) -> None:
     async def _run() -> None:
-        cfg = load_config(ctx.obj["config_path"])
+        cfg = load_config(args.config_path)
         from .core.client import MatrixClient
 
         async with MatrixClient(cfg.homeserver, cfg.resolve_token()) as client:
             result = await client.whoami()
-            click.echo(json.dumps(result, indent=2))
+            print(json.dumps(result, indent=2))
 
     asyncio.run(_run())
 
 
-@main.command()
-@click.argument("room_id")
-@click.argument("message")
-@click.option("--msgtype", default="m.text", help="Message type.")
-@click.pass_context
-def send(ctx: click.Context, room_id: str, message: str, msgtype: str) -> None:
-    """Send a message to a room."""
-
+def _cmd_send(args: argparse.Namespace) -> None:
     async def _run() -> None:
-        cfg = load_config(ctx.obj["config_path"])
+        cfg = load_config(args.config_path)
         from .core.client import MatrixClient
 
         async with MatrixClient(cfg.homeserver, cfg.resolve_token()) as client:
-            result = await client.send_message(room_id, message, msgtype=msgtype)
-            click.echo(json.dumps(result, indent=2))
+            result = await client.send_message(
+                args.room_id, args.message, msgtype=args.msgtype,
+            )
+            print(json.dumps(result, indent=2))
 
     asyncio.run(_run())
 
 
-@main.command()
-@click.pass_context
-def rooms(ctx: click.Context) -> None:
-    """List joined rooms with names."""
-
+def _cmd_rooms(args: argparse.Namespace) -> None:
     async def _run() -> None:
-        cfg = load_config(ctx.obj["config_path"])
+        cfg = load_config(args.config_path)
         from .core.client import MatrixClient
 
         async with MatrixClient(cfg.homeserver, cfg.resolve_token()) as client:
@@ -92,27 +123,16 @@ def rooms(ctx: click.Context) -> None:
             for rid in room_ids:
                 name = await client.get_room_name(rid)
                 display = f"{rid} → {name}" if name else rid
-                click.echo(display)
+                print(display)
 
     asyncio.run(_run())
 
 
-@main.command()
-@click.option(
-    "--delivery",
-    "delivery_mode",
-    type=click.Choice(["stdout", "webhook", "exec"]),
-    default=None,
-    help="Override delivery mode.",
-)
-@click.pass_context
-def listen(ctx: click.Context, delivery_mode: str | None) -> None:
-    """Run the /sync listener with policy filtering."""
-
+def _cmd_listen(args: argparse.Namespace) -> None:
     async def _run() -> None:
-        cfg = load_config(ctx.obj["config_path"])
-        if delivery_mode:
-            cfg.delivery.mode = delivery_mode
+        cfg = load_config(args.config_path)
+        if args.delivery_mode:
+            cfg.delivery.mode = args.delivery_mode
 
         from .core.client import MatrixClient
         from .core.listener import Listener, ListenerConfig
@@ -135,7 +155,7 @@ def listen(ctx: click.Context, delivery_mode: str | None) -> None:
         async with MatrixClient(cfg.homeserver, cfg.resolve_token()) as client:
             listener = Listener(client, listener_cfg)
             await listener.do_initial_sync()
-            click.echo("Listening... (Ctrl+C to stop)", err=True)
+            print("Listening... (Ctrl+C to stop)", file=sys.stderr)
 
             try:
                 async for event in listener.listen():
@@ -148,33 +168,20 @@ def listen(ctx: click.Context, delivery_mode: str | None) -> None:
     asyncio.run(_run())
 
 
-@main.command()
-@click.option(
-    "--mode",
-    type=click.Choice(["mcp", "rest"]),
-    default="mcp",
-    help="Server mode.",
-)
-@click.option("--host", default=None, help="Bind host.")
-@click.option("--port", default=None, type=int, help="Bind port.")
-@click.pass_context
-def serve(ctx: click.Context, mode: str, host: str | None, port: int | None) -> None:
-    """Start MCP or REST tool server."""
-    cfg = load_config(ctx.obj["config_path"])
-    if host:
-        cfg.server.host = host
-    if port:
-        cfg.server.port = port
+def _cmd_serve(args: argparse.Namespace) -> None:
+    cfg = load_config(args.config_path)
+    if args.host:
+        cfg.server.host = args.host
+    if args.port:
+        cfg.server.port = args.port
 
-    if mode == "mcp":
-        click.echo("MCP server mode — install matrixd[mcp] for full support.", err=True)
-        click.echo("(MCP server implementation pending)", err=True)
+    if args.mode == "mcp":
+        print("MCP server mode — install matrixd[mcp] for full support.", file=sys.stderr)
+        print("(MCP server implementation pending)", file=sys.stderr)
         sys.exit(1)
-    elif mode == "rest":
-        click.echo(
-            "REST server mode — install matrixd[api] for full support.", err=True
-        )
-        click.echo("(REST server implementation pending)", err=True)
+    elif args.mode == "rest":
+        print("REST server mode — install matrixd[api] for full support.", file=sys.stderr)
+        print("(REST server implementation pending)", file=sys.stderr)
         sys.exit(1)
 
 

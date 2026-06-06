@@ -1,25 +1,46 @@
 """Configuration loader.
 
-Loads matrixd config from YAML file with env var interpolation.
+Loads matrixd config from JSON (stdlib) or YAML (optional dependency).
+Supports env var interpolation via ${VAR} syntax.
 """
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from .policy import RoomPolicy
 
 DEFAULT_CONFIG_PATHS = [
+    Path("matrixd.json"),
     Path("matrixd.yaml"),
     Path("matrixd.yml"),
+    Path.home() / ".config" / "matrixd" / "config.json",
     Path.home() / ".config" / "matrixd" / "config.yaml",
     Path.home() / ".config" / "matrixd" / "config.yml",
 ]
+
+
+def _load_file(path: Path) -> dict[str, Any]:
+    """Load a config file, dispatching by extension."""
+    text = path.read_text(encoding="utf-8")
+    suffix = path.suffix.lower()
+    if suffix == ".json":
+        return json.loads(text)  # type: ignore[no-any-return]
+    if suffix in (".yaml", ".yml"):
+        try:
+            import yaml  # type: ignore[import-untyped]
+        except ImportError:
+            raise ImportError(
+                f"YAML config file detected ({path}) but PyYAML is not installed. "
+                "Install it with: pip install pyyaml\n"
+                "Or use a JSON config file instead (matrixd.json)."
+            ) from None
+        return yaml.safe_load(text) or {}
+    raise ValueError(f"Unsupported config format: {suffix} (use .json or .yaml)")
 
 
 @dataclass
@@ -70,18 +91,16 @@ class Config:
         if self.token_file:
             path = Path(os.path.expanduser(self.token_file))
             if path.suffix == ".json":
-                import json
-
-                data = json.loads(path.read_text())
+                data = json.loads(path.read_text(encoding="utf-8"))
                 return data.get("accessToken", data.get("access_token", ""))
-            return path.read_text().strip()
+            return path.read_text(encoding="utf-8").strip()
         raise ValueError("No token configured. Set 'token' or 'token_file'.")
 
 
 def load_config(path: str | Path | None = None) -> Config:
-    """Load config from YAML file.
+    """Load config from JSON or YAML file.
 
-    If path is None, searches default locations.
+    If path is None, searches default locations (JSON checked first).
     """
     if path:
         config_path = Path(path)
@@ -94,12 +113,12 @@ def load_config(path: str | Path | None = None) -> Config:
         if config_path is None:
             return Config()
 
-    raw = yaml.safe_load(config_path.read_text()) or {}
+    raw = _load_file(config_path)
     return _parse_config(raw)
 
 
 def _parse_config(raw: dict[str, Any]) -> Config:
-    """Parse raw YAML dict into Config."""
+    """Parse raw dict into Config."""
     config = Config()
 
     config.homeserver = _env_str(raw.get("homeserver", ""))
