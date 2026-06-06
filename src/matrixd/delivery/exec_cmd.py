@@ -12,9 +12,12 @@ logger = logging.getLogger(__name__)
 
 
 class ExecDelivery(DeliveryBackend):
-    def __init__(self, cmd: list[str], fmt: str = "json") -> None:
+    def __init__(
+        self, cmd: list[str], fmt: str = "json", *, timeout: float = 30.0,
+    ) -> None:
         self.cmd = cmd
         self.fmt = fmt
+        self.timeout = timeout
 
     async def deliver(self, event: Event) -> None:
         data = self.serialize(event, self.fmt)
@@ -25,7 +28,18 @@ class ExecDelivery(DeliveryBackend):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await proc.communicate(data.encode())
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(data.encode()), timeout=self.timeout,
+                )
+            except asyncio.TimeoutError:
+                logger.error(
+                    "Exec %s timed out after %.0fs, killing process",
+                    self.cmd, self.timeout,
+                )
+                proc.kill()
+                await proc.wait()
+                return
             if proc.returncode != 0:
                 logger.warning(
                     "Exec %s exited %d: %s",

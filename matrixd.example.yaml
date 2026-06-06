@@ -35,6 +35,7 @@ delivery:
   # Exec mode — event JSON piped to stdin
   # mode: exec
   # exec_cmd: ["python", "handle_event.py"]
+  # exec_timeout: 30    # seconds; kills subprocess on timeout (default: 30)
 
 # Server settings (for `matrixd serve`)
 server:
