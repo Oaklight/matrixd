@@ -80,13 +80,48 @@ class MatrixClient:
         *,
         msgtype: str = "m.text",
         formatted_body: str | None = None,
+        reply_to: str | None = None,
+        thread_root: str | None = None,
     ) -> dict[str, Any]:
-        """Send a message to a room."""
+        """Send a message to a room.
+
+        Args:
+            room_id: Target room.
+            body: Plain-text message body (always required as fallback).
+            msgtype: Message type (default "m.text").
+            formatted_body: HTML-formatted body.
+            reply_to: Event ID to reply to. When set, the caller should
+                include the fallback quote in ``body``:
+                ``"> <@user:server> original\n\nreply text"``
+            thread_root: Root event ID of the thread. Can be combined
+                with ``reply_to`` to reply to a specific message in
+                a thread.
+        """
         txn_id = f"matrixd-{int(time.time() * 1e9)}"
         content: dict[str, Any] = {"msgtype": msgtype, "body": body}
         if formatted_body:
             content["format"] = "org.matrix.custom.html"
             content["formatted_body"] = formatted_body
+
+        # Build m.relates_to for reply and/or thread
+        if thread_root:
+            # Thread reply — reply_to defaults to root if not specified
+            content["m.relates_to"] = {
+                "rel_type": "m.thread",
+                "event_id": thread_root,
+                "is_falling_back": reply_to is None,
+                "m.in_reply_to": {
+                    "event_id": reply_to or thread_root,
+                },
+            }
+        elif reply_to:
+            # Plain reply (not in a thread)
+            content["m.relates_to"] = {
+                "m.in_reply_to": {
+                    "event_id": reply_to,
+                },
+            }
+
         return (
             await self._put(
                 f"/rooms/{_enc(room_id)}/send/m.room.message/{txn_id}", content
