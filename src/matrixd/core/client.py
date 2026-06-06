@@ -14,6 +14,24 @@ from urllib.parse import quote
 from .._vendor.httpclient import AsyncClient, Response
 
 
+class MatrixAPIError(Exception):
+    """Error from the Matrix Client-Server API.
+
+    Attributes:
+        status_code: HTTP status code.
+        errcode: Matrix error code (e.g., ``M_FORBIDDEN``, ``M_NOT_FOUND``).
+        error: Human-readable error message from the server.
+        body: Full response body dict.
+    """
+
+    def __init__(self, status_code: int, body: dict[str, Any]) -> None:
+        self.status_code = status_code
+        self.errcode: str = body.get("errcode", "M_UNKNOWN")
+        self.error: str = body.get("error", "Unknown error")
+        self.body = body
+        super().__init__(f"[{self.status_code}] {self.errcode}: {self.error}")
+
+
 @dataclass
 class MatrixClient:
     """Async Matrix Client-Server API client.
@@ -47,24 +65,31 @@ class MatrixClient:
 
     # ── HTTP helpers ──────────────────────────────────────────
 
+    def _check(self, resp: Response) -> Response:
+        """Raise MatrixAPIError on non-2xx responses."""
+        if resp.status_code >= 400:
+            try:
+                body = resp.json()
+            except Exception:
+                body = {"error": resp.text[:500]}
+            raise MatrixAPIError(resp.status_code, body)
+        return resp
+
     async def _get(
         self, path: str, *, params: dict[str, Any] | None = None, timeout: float | None = None,
     ) -> Response:
         resp = await self._http.get(
             f"{self._base}{path}", params=params, **({"timeout": timeout} if timeout else {}),
         )
-        resp.raise_for_status()
-        return resp
+        return self._check(resp)
 
     async def _post(self, path: str, body: dict[str, Any] | None = None) -> Response:
         resp = await self._http.post(f"{self._base}{path}", json=body or {})
-        resp.raise_for_status()
-        return resp
+        return self._check(resp)
 
     async def _put(self, path: str, body: dict[str, Any] | None = None) -> Response:
         resp = await self._http.put(f"{self._base}{path}", json=body or {})
-        resp.raise_for_status()
-        return resp
+        return self._check(resp)
 
     # ── Identity ──────────────────────────────────────────────
 
