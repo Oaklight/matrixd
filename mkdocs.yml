@@ -1,0 +1,108 @@
+site_name: matrixd
+site_description: Matrix 智能体守护进程 — 面向 AI Agent 的监听器、工具和钩子
+site_author: Peng Ding
+site_url: https://matrixd.readthedocs.io/zh-cn/latest
+repo_name: Oaklight/matrixd
+repo_url: https://github.com/Oaklight/matrixd
+copyright: Copyright &copy; 2026 Peng Ding
+
+theme:
+  name: material
+  custom_dir: overrides
+  language: zh
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: 切换到浅色模式
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: 切换到深色模式
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: 跟随系统
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - search.highlight
+    - search.share
+    - search.suggest
+    - content.code.copy
+    - content.action.edit
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: false
+            show_root_heading: true
+            members_order: source
+  - llmstxt:
+      full_output: llms-full.txt
+      sections:
+        首页:
+          - index.md
+        使用指南:
+          - usage/index.md
+          - usage/installation.md
+          - usage/configuration.md
+          - usage/listener.md
+        API 参考:
+          - api/index.md
+        示例:
+          - examples/index.md
+        更新日志:
+          - changelog.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Oaklight/matrixd
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/matrixd/
+  alternate:
+    - name: English
+      link: /en/latest/
+      lang: en
+    - name: 中文
+      link: /zh-cn/latest/
+      lang: zh
+
+nav:
+  - 首页: index.md
+  - 使用指南:
+      - usage/index.md
+      - 安装: usage/installation.md
+      - 配置: usage/configuration.md
+      - 监听器: usage/listener.md
+  - API 参考:
+      - api/index.md
+  - 示例:
+      - examples/index.md
+  - 更新日志: changelog.md
