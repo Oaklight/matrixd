@@ -1,7 +1,7 @@
 """Configuration loader.
 
-Loads matrixd config from JSON (stdlib) or YAML (optional dependency).
-Supports env var interpolation via ${VAR} syntax.
+Loads matrixd config from JSONC/JSON (via vendored zerodep jsonc module)
+or YAML (optional dependency). Supports env var interpolation via ${VAR} syntax.
 """
 
 from __future__ import annotations
@@ -12,12 +12,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..vendor.jsonc import loads as jsonc_loads
 from .policy import RoomPolicy
 
 DEFAULT_CONFIG_PATHS = [
+    Path("matrixd.jsonc"),
     Path("matrixd.json"),
     Path("matrixd.yaml"),
     Path("matrixd.yml"),
+    Path.home() / ".config" / "matrixd" / "config.jsonc",
     Path.home() / ".config" / "matrixd" / "config.json",
     Path.home() / ".config" / "matrixd" / "config.yaml",
     Path.home() / ".config" / "matrixd" / "config.yml",
@@ -28,8 +31,8 @@ def _load_file(path: Path) -> dict[str, Any]:
     """Load a config file, dispatching by extension."""
     text = path.read_text(encoding="utf-8")
     suffix = path.suffix.lower()
-    if suffix == ".json":
-        return json.loads(text)  # type: ignore[no-any-return]
+    if suffix in (".jsonc", ".json"):
+        return jsonc_loads(text)  # type: ignore[no-any-return]
     if suffix in (".yaml", ".yml"):
         try:
             import yaml  # type: ignore[import-untyped]
@@ -37,10 +40,10 @@ def _load_file(path: Path) -> dict[str, Any]:
             raise ImportError(
                 f"YAML config file detected ({path}) but PyYAML is not installed. "
                 "Install it with: pip install pyyaml\n"
-                "Or use a JSON config file instead (matrixd.json)."
+                "Or use a JSONC config file instead (matrixd.jsonc)."
             ) from None
         return yaml.safe_load(text) or {}
-    raise ValueError(f"Unsupported config format: {suffix} (use .json or .yaml)")
+    raise ValueError(f"Unsupported config format: {suffix} (use .jsonc, .json, or .yaml)")
 
 
 @dataclass

@@ -1,0 +1,52 @@
+{
+  // matrixd configuration example
+  // Copy to matrixd.jsonc or ~/.config/matrixd/config.jsonc
+
+  "homeserver": "https://matrix.example.com",
+
+  // Token: direct value or file path
+  // "token": "syt_...",
+  "token_file": "~/.openclaw/credentials/matrix/credentials.json",
+  // Also supports env vars: ${MATRIX_TOKEN}
+
+  // Default policy for rooms not listed below
+  // Options: lurk | mention-only | all | important
+  "default_policy": "lurk",
+
+  // Per-room policies
+  "rooms": {
+    "!abc123:example.com": {
+      "policy": "all"           // deliver every message
+    },
+    "!dev-room:example.com": {
+      "policy": "mention-only"  // only when bot is mentioned
+    },
+    "!alerts:example.com": {
+      "policy": "important"     // mentions + replies to bot
+    },
+  },
+
+  // /sync long-poll timeout (ms)
+  "sync_timeout_ms": 30000,
+
+  // Delivery backend
+  "delivery": {
+    "mode": "stdout",           // stdout | webhook | exec
+    "format": "json",           // json | plain
+
+    // Webhook mode:
+    // "mode": "webhook",
+    // "webhook_url": "http://localhost:8080/matrix-events",
+
+    // Exec mode — event JSON piped to stdin:
+    // "mode": "exec",
+    // "exec_cmd": ["python", "handle_event.py"],
+  },
+
+  // Server settings (for `matrixd serve`)
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8989,
+    "mcp_transport": "stdio"    // stdio | sse
+  },
+}
