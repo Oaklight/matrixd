@@ -53,6 +53,7 @@ class DeliveryConfig:
     mode: str = "stdout"  # stdout, webhook, exec
     webhook_url: str | None = None
     exec_cmd: list[str] | None = None
+    exec_timeout: float = 30.0  # seconds; kills subprocess on timeout
     format: str = "json"  # json, plain
     include_context: int = 0
 
@@ -149,6 +150,7 @@ def _parse_config(raw: dict[str, Any]) -> Config:
         mode=delivery_raw.get("mode", "stdout"),
         webhook_url=_env_str(delivery_raw.get("webhook_url", "")),
         exec_cmd=delivery_raw.get("exec_cmd"),
+        exec_timeout=float(delivery_raw.get("exec_timeout", 30.0)),
         format=delivery_raw.get("format", "json"),
         include_context=delivery_raw.get("include_context", 0),
     )

@@ -149,6 +149,7 @@ def _cmd_listen(args: argparse.Namespace) -> None:
             cfg.delivery.mode,
             webhook_url=cfg.delivery.webhook_url,
             exec_cmd=cfg.delivery.exec_cmd,
+            exec_timeout=cfg.delivery.exec_timeout,
             format=cfg.delivery.format,
         )
 
