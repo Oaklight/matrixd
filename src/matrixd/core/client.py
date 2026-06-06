@@ -6,12 +6,16 @@ Uses zerodep's httpclient (vendored, stdlib-only).
 
 from __future__ import annotations
 
-import time
+import asyncio
+import logging
+import uuid
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
 
-from .._vendor.httpclient import AsyncClient, Response
+from .._vendor.httpclient import AsyncClient, HTTPError, Response
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -27,6 +31,7 @@ class MatrixClient:
     homeserver: str
     token: str
     timeout: float = 30.0
+    max_retries: int = 3
 
     def __post_init__(self) -> None:
         self.homeserver = self.homeserver.rstrip("/")
@@ -47,24 +52,66 @@ class MatrixClient:
 
     # ── HTTP helpers ──────────────────────────────────────────
 
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,
+    ) -> Response:
+        """Send a request with automatic 429 retry."""
+        url = f"{self._base}{path}"
+        kwargs: dict[str, Any] = {}
+        if params:
+            kwargs["params"] = params
+        if timeout:
+            kwargs["timeout"] = timeout
+        if body is not None:
+            kwargs["json"] = body
+
+        last_exc: Exception | None = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                resp = await getattr(self._http, method.lower())(url, **kwargs)
+                if resp.status_code == 429:
+                    retry_ms = resp.json().get("retry_after_ms", 2000)
+                    wait_s = retry_ms / 1000 + 0.5
+                    logger.warning(
+                        "Rate limited (429), waiting %.1fs (attempt %d/%d)",
+                        wait_s, attempt, self.max_retries,
+                    )
+                    await asyncio.sleep(wait_s)
+                    continue
+                resp.raise_for_status()
+                return resp
+            except HTTPError:
+                raise
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(
+                    "Request %s %s failed (attempt %d/%d): %s",
+                    method, path, attempt, self.max_retries, exc,
+                )
+                await asyncio.sleep(min(attempt * 2, 10))
+        raise last_exc or RuntimeError(f"Rate limited after {self.max_retries} retries")
+
     async def _get(
         self, path: str, *, params: dict[str, Any] | None = None, timeout: float | None = None,
     ) -> Response:
-        resp = await self._http.get(
-            f"{self._base}{path}", params=params, **({"timeout": timeout} if timeout else {}),
-        )
-        resp.raise_for_status()
-        return resp
+        return await self._request("GET", path, params=params, timeout=timeout)
 
     async def _post(self, path: str, body: dict[str, Any] | None = None) -> Response:
-        resp = await self._http.post(f"{self._base}{path}", json=body or {})
-        resp.raise_for_status()
-        return resp
+        return await self._request("POST", path, body=body or {})
 
     async def _put(self, path: str, body: dict[str, Any] | None = None) -> Response:
-        resp = await self._http.put(f"{self._base}{path}", json=body or {})
-        resp.raise_for_status()
-        return resp
+        return await self._request("PUT", path, body=body or {})
+
+    @staticmethod
+    def _txn_id(prefix: str = "matrixd") -> str:
+        """Generate a unique transaction ID."""
+        return f"{prefix}-{uuid.uuid4().hex[:16]}"
 
     # ── Identity ──────────────────────────────────────────────
 
@@ -82,7 +129,7 @@ class MatrixClient:
         formatted_body: str | None = None,
     ) -> dict[str, Any]:
         """Send a message to a room."""
-        txn_id = f"matrixd-{int(time.time() * 1e9)}"
+        txn_id = self._txn_id("msg")
         content: dict[str, Any] = {"msgtype": msgtype, "body": body}
         if formatted_body:
             content["format"] = "org.matrix.custom.html"
@@ -97,7 +144,7 @@ class MatrixClient:
         self, room_id: str, event_id: str, emoji: str
     ) -> dict[str, Any]:
         """Send a reaction to an event."""
-        txn_id = f"react-{int(time.time() * 1e9)}"
+        txn_id = self._txn_id("react")
         content = {
             "m.relates_to": {
                 "rel_type": "m.annotation",
@@ -115,7 +162,7 @@ class MatrixClient:
         self, room_id: str, event_id: str, *, reason: str | None = None
     ) -> dict[str, Any]:
         """Redact (delete) an event."""
-        txn_id = f"redact-{int(time.time() * 1e9)}"
+        txn_id = self._txn_id("redact")
         body = {"reason": reason} if reason else {}
         return (
             await self._put(
