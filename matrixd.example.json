@@ -1,22 +1,12 @@
 {
-  "_comment": "matrixd configuration example — copy to matrixd.json or ~/.config/matrixd/config.json",
-
   "homeserver": "https://matrix.example.com",
-
   "token_file": "~/.openclaw/credentials/matrix/credentials.json",
 
   "default_policy": "lurk",
-
   "rooms": {
-    "!abc123:example.com": {
-      "policy": "all"
-    },
-    "!dev-room:example.com": {
-      "policy": "mention-only"
-    },
-    "!alerts:example.com": {
-      "policy": "important"
-    }
+    "!abc123:example.com": { "policy": "all" },
+    "!dev-room:example.com": { "policy": "mention-only" },
+    "!alerts:example.com": { "policy": "important" }
   },
 
   "sync_timeout_ms": 30000,

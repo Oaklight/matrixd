@@ -1,22 +1,25 @@
 """Matrix Client-Server API wrapper.
 
 Async HTTP client for the standard Matrix Client-Server API.
-Replaces curl+jq with a proper Python interface — same endpoints,
-same semantics, typed responses.
+Uses only Python stdlib (urllib.request + asyncio executor).
 """
 
 from __future__ import annotations
 
+import asyncio
+import http.client
+import json
+import ssl
 import time
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
-
-import httpx
+from urllib.parse import quote, urlencode, urlparse
 
 
 @dataclass
 class MatrixClient:
-    """Async Matrix Client-Server API client.
+    """Async Matrix Client-Server API client (stdlib only).
 
     Args:
         homeserver: Base URL of the homeserver (e.g., "https://matrix.example.com").
@@ -27,18 +30,17 @@ class MatrixClient:
     homeserver: str
     token: str
     timeout: float = 30.0
-    _http: httpx.AsyncClient = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.homeserver = self.homeserver.rstrip("/")
-        self._http = httpx.AsyncClient(
-            base_url=f"{self.homeserver}/_matrix/client/v3",
-            headers={"Authorization": f"Bearer {self.token}"},
-            timeout=self.timeout,
-        )
+        parsed = urlparse(self.homeserver)
+        self._scheme = parsed.scheme
+        self._host = parsed.hostname or ""
+        self._port = parsed.port
+        self._base_path = "/_matrix/client/v3"
 
     async def close(self) -> None:
-        await self._http.aclose()
+        pass  # stdlib connections are per-request
 
     async def __aenter__(self) -> MatrixClient:
         return self
@@ -46,12 +48,80 @@ class MatrixClient:
     async def __aexit__(self, *exc: Any) -> None:
         await self.close()
 
+    # ── HTTP layer ────────────────────────────────────────────
+
+    def _request_sync(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        """Synchronous HTTP request using stdlib."""
+        full_path = self._base_path + path
+        if params:
+            qs = urlencode({k: v for k, v in params.items() if v is not None})
+            full_path = f"{full_path}?{qs}"
+
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json",
+        }
+
+        data = json.dumps(body).encode() if body is not None else None
+        effective_timeout = timeout or self.timeout
+
+        if self._scheme == "https":
+            ctx = ssl.create_default_context()
+            conn = http.client.HTTPSConnection(
+                self._host, self._port, timeout=effective_timeout, context=ctx
+            )
+        else:
+            conn = http.client.HTTPConnection(
+                self._host, self._port, timeout=effective_timeout
+            )
+
+        try:
+            conn.request(method, full_path, body=data, headers=headers)
+            resp = conn.getresponse()
+            resp_data = resp.read().decode()
+
+            if resp.status >= 400:
+                raise MatrixAPIError(resp.status, resp_data)
+
+            return json.loads(resp_data) if resp_data else {}
+        finally:
+            conn.close()
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        """Async wrapper: runs sync request in executor."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            partial(
+                self._request_sync,
+                method,
+                path,
+                body=body,
+                params=params,
+                timeout=timeout,
+            ),
+        )
+
     # ── Identity ──────────────────────────────────────────────
 
     async def whoami(self) -> dict[str, Any]:
-        resp = await self._http.get("/account/whoami")
-        resp.raise_for_status()
-        return resp.json()
+        return await self._request("GET", "/account/whoami")
 
     # ── Messaging ─────────────────────────────────────────────
 
@@ -69,12 +139,11 @@ class MatrixClient:
         if formatted_body:
             content["format"] = "org.matrix.custom.html"
             content["formatted_body"] = formatted_body
-        resp = await self._http.put(
-            f"/rooms/{_encode(room_id)}/send/m.room.message/{txn_id}",
-            json=content,
+        return await self._request(
+            "PUT",
+            f"/rooms/{_enc(room_id)}/send/m.room.message/{txn_id}",
+            body=content,
         )
-        resp.raise_for_status()
-        return resp.json()
 
     async def send_reaction(
         self, room_id: str, event_id: str, emoji: str
@@ -88,12 +157,11 @@ class MatrixClient:
                 "key": emoji,
             }
         }
-        resp = await self._http.put(
-            f"/rooms/{_encode(room_id)}/send/m.reaction/{txn_id}",
-            json=content,
+        return await self._request(
+            "PUT",
+            f"/rooms/{_enc(room_id)}/send/m.reaction/{txn_id}",
+            body=content,
         )
-        resp.raise_for_status()
-        return resp.json()
 
     async def redact(
         self, room_id: str, event_id: str, *, reason: str | None = None
@@ -101,12 +169,11 @@ class MatrixClient:
         """Redact (delete) an event."""
         txn_id = f"redact-{int(time.time() * 1e9)}"
         body = {"reason": reason} if reason else {}
-        resp = await self._http.put(
-            f"/rooms/{_encode(room_id)}/redact/{_encode(event_id)}/{txn_id}",
-            json=body,
+        return await self._request(
+            "PUT",
+            f"/rooms/{_enc(room_id)}/redact/{_enc(event_id)}/{txn_id}",
+            body=body,
         )
-        resp.raise_for_status()
-        return resp.json()
 
     # ── History ───────────────────────────────────────────────
 
@@ -120,30 +187,25 @@ class MatrixClient:
         filter_types: list[str] | None = None,
     ) -> dict[str, Any]:
         """Read room message history."""
-        params: dict[str, Any] = {"dir": direction, "limit": limit}
+        params: dict[str, Any] = {"dir": direction, "limit": str(limit)}
         if from_token:
             params["from"] = from_token
         if filter_types:
-            import json
-
             params["filter"] = json.dumps({"types": filter_types})
-        resp = await self._http.get(f"/rooms/{_encode(room_id)}/messages", params=params)
-        resp.raise_for_status()
-        return resp.json()
+        return await self._request(
+            "GET", f"/rooms/{_enc(room_id)}/messages", params=params
+        )
 
     async def get_event(self, room_id: str, event_id: str) -> dict[str, Any]:
-        resp = await self._http.get(
-            f"/rooms/{_encode(room_id)}/event/{_encode(event_id)}"
+        return await self._request(
+            "GET", f"/rooms/{_enc(room_id)}/event/{_enc(event_id)}"
         )
-        resp.raise_for_status()
-        return resp.json()
 
     # ── Rooms ─────────────────────────────────────────────────
 
     async def joined_rooms(self) -> list[str]:
-        resp = await self._http.get("/joined_rooms")
-        resp.raise_for_status()
-        return resp.json().get("joined_rooms", [])
+        data = await self._request("GET", "/joined_rooms")
+        return data.get("joined_rooms", [])
 
     async def create_room(
         self,
@@ -159,7 +221,7 @@ class MatrixClient:
         body: dict[str, Any] = {
             "preset": preset,
             "visibility": "private",
-            "initial_state": [],  # explicit: no encryption
+            "initial_state": [],
         }
         if name:
             body["name"] = name
@@ -171,17 +233,14 @@ class MatrixClient:
             body["is_direct"] = True
         if power_level_overrides:
             body["power_level_content_override"] = {"users": power_level_overrides}
-        resp = await self._http.post("/createRoom", json=body)
-        resp.raise_for_status()
-        return resp.json()
+        return await self._request("POST", "/createRoom", body=body)
 
     # ── Membership ────────────────────────────────────────────
 
     async def invite(self, room_id: str, user_id: str) -> None:
-        resp = await self._http.post(
-            f"/rooms/{_encode(room_id)}/invite", json={"user_id": user_id}
+        await self._request(
+            "POST", f"/rooms/{_enc(room_id)}/invite", body={"user_id": user_id}
         )
-        resp.raise_for_status()
 
     async def kick(
         self, room_id: str, user_id: str, *, reason: str | None = None
@@ -189,8 +248,7 @@ class MatrixClient:
         body: dict[str, Any] = {"user_id": user_id}
         if reason:
             body["reason"] = reason
-        resp = await self._http.post(f"/rooms/{_encode(room_id)}/kick", json=body)
-        resp.raise_for_status()
+        await self._request("POST", f"/rooms/{_enc(room_id)}/kick", body=body)
 
     async def ban(
         self, room_id: str, user_id: str, *, reason: str | None = None
@@ -198,24 +256,22 @@ class MatrixClient:
         body: dict[str, Any] = {"user_id": user_id}
         if reason:
             body["reason"] = reason
-        resp = await self._http.post(f"/rooms/{_encode(room_id)}/ban", json=body)
-        resp.raise_for_status()
+        await self._request("POST", f"/rooms/{_enc(room_id)}/ban", body=body)
 
     async def get_members(self, room_id: str) -> list[str]:
-        resp = await self._http.get(f"/rooms/{_encode(room_id)}/joined_members")
-        resp.raise_for_status()
-        return list(resp.json().get("joined", {}).keys())
+        data = await self._request(
+            "GET", f"/rooms/{_enc(room_id)}/joined_members"
+        )
+        return list(data.get("joined", {}).keys())
 
     # ── State ─────────────────────────────────────────────────
 
     async def get_state(
         self, room_id: str, event_type: str, state_key: str = ""
     ) -> dict[str, Any]:
-        resp = await self._http.get(
-            f"/rooms/{_encode(room_id)}/state/{event_type}/{state_key}"
+        return await self._request(
+            "GET", f"/rooms/{_enc(room_id)}/state/{event_type}/{state_key}"
         )
-        resp.raise_for_status()
-        return resp.json()
 
     async def set_state(
         self,
@@ -224,18 +280,17 @@ class MatrixClient:
         content: dict[str, Any],
         state_key: str = "",
     ) -> dict[str, Any]:
-        resp = await self._http.put(
-            f"/rooms/{_encode(room_id)}/state/{event_type}/{state_key}",
-            json=content,
+        return await self._request(
+            "PUT",
+            f"/rooms/{_enc(room_id)}/state/{event_type}/{state_key}",
+            body=content,
         )
-        resp.raise_for_status()
-        return resp.json()
 
     async def get_room_name(self, room_id: str) -> str | None:
         try:
             data = await self.get_state(room_id, "m.room.name")
             return data.get("name")
-        except httpx.HTTPStatusError:
+        except MatrixAPIError:
             return None
 
     async def set_room_name(self, room_id: str, name: str) -> None:
@@ -262,31 +317,48 @@ class MatrixClient:
         filter_str: str | None = None,
     ) -> dict[str, Any]:
         """Long-poll /sync endpoint."""
-        params: dict[str, Any] = {"timeout": timeout_ms}
+        params: dict[str, Any] = {"timeout": str(timeout_ms)}
         if since:
             params["since"] = since
         if filter_str:
             params["filter"] = filter_str
-        resp = await self._http.get(
+        return await self._request(
+            "GET",
             "/sync",
             params=params,
             timeout=self.timeout + timeout_ms / 1000 + 5,
         )
-        resp.raise_for_status()
-        return resp.json()
 
     # ── Profile ───────────────────────────────────────────────
 
     async def get_display_name(self, user_id: str) -> str | None:
-        resp = await self._http.get(f"/profile/{_encode(user_id)}/displayname")
-        if resp.status_code == 404:
-            return None
-        resp.raise_for_status()
-        return resp.json().get("displayname")
+        try:
+            data = await self._request(
+                "GET", f"/profile/{_enc(user_id)}/displayname"
+            )
+            return data.get("displayname")
+        except MatrixAPIError as e:
+            if e.status == 404:
+                return None
+            raise
 
 
-def _encode(value: str) -> str:
+class MatrixAPIError(Exception):
+    """Raised when the Matrix API returns an error status."""
+
+    def __init__(self, status: int, body: str) -> None:
+        self.status = status
+        self.body = body
+        try:
+            data = json.loads(body)
+            self.errcode = data.get("errcode", "")
+            self.error = data.get("error", "")
+        except (json.JSONDecodeError, KeyError):
+            self.errcode = ""
+            self.error = body[:200]
+        super().__init__(f"HTTP {status}: {self.errcode} {self.error}")
+
+
+def _enc(value: str) -> str:
     """URL-encode a Matrix identifier for use in URL paths."""
-    from urllib.parse import quote
-
     return quote(value, safe="")
