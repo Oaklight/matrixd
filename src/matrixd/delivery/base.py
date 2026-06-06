@@ -61,6 +61,9 @@ def create_backend(mode: str, **kwargs: Any) -> DeliveryBackend:
         cmd = kwargs.get("exec_cmd")
         if not cmd:
             raise ValueError("exec delivery requires 'exec_cmd'")
-        return ExecDelivery(cmd=cmd, fmt=kwargs.get("format", "json"))
+        return ExecDelivery(
+            cmd=cmd, fmt=kwargs.get("format", "json"),
+            timeout=kwargs.get("exec_timeout", 30.0),
+        )
     else:
         raise ValueError(f"Unknown delivery mode: {mode}")
