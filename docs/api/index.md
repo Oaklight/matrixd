@@ -6,8 +6,6 @@
 
 ::: matrixd.core.client.MatrixClient
 
-::: matrixd.core.client.MatrixAPIError
-
 ### Listener
 
 ::: matrixd.core.listener.Listener
