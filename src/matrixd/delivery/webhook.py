@@ -9,7 +9,7 @@ import json
 import logging
 
 from ..core.policy import Event
-from ..vendor.httpclient import AsyncClient
+from .._vendor.httpclient import AsyncClient
 from .base import DeliveryBackend
 
 logger = logging.getLogger(__name__)

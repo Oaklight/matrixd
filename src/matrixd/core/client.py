@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
 
-from ..vendor.httpclient import AsyncClient, Response
+from .._vendor.httpclient import AsyncClient, Response
 
 
 @dataclass

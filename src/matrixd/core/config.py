@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..vendor.jsonc import loads as jsonc_loads
+from .._vendor.jsonc import loads as jsonc_loads
 from .policy import RoomPolicy
 
 DEFAULT_CONFIG_PATHS = [
