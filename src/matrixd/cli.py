@@ -62,6 +62,10 @@ def main(argv: list[str] | None = None) -> None:
         "--mode", choices=["mcp", "rest"], default="mcp",
         help="Server mode.",
     )
+    serve_p.add_argument(
+        "--transport", choices=["stdio", "sse", "streamable-http"],
+        default=None, help="MCP transport (default: from config or stdio).",
+    )
     serve_p.add_argument("--host", default=None, help="Bind host.")
     serve_p.add_argument("--port", type=int, default=None, help="Bind port.")
 
@@ -170,19 +174,26 @@ def _cmd_listen(args: argparse.Namespace) -> None:
 
 def _cmd_serve(args: argparse.Namespace) -> None:
     cfg = load_config(args.config_path)
-    if args.host:
-        cfg.server.host = args.host
-    if args.port:
-        cfg.server.port = args.port
+    host = args.host or cfg.server.host
+    port = args.port or cfg.server.port
 
     if args.mode == "mcp":
-        print("MCP server mode — install matrixd[mcp] for full support.", file=sys.stderr)
-        print("(MCP server implementation pending)", file=sys.stderr)
-        sys.exit(1)
+        try:
+            from .servers.mcp import run_mcp_server
+        except ImportError:
+            print(
+                "MCP server requires the 'mcp' package. Install with:\n"
+                "  pip install matrixd[mcp]",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        transport = args.transport or cfg.server.mcp_transport
+        run_mcp_server(transport=transport, host=host, port=port)
     elif args.mode == "rest":
-        print("REST server mode — install matrixd[api] for full support.", file=sys.stderr)
-        print("(REST server implementation pending)", file=sys.stderr)
-        sys.exit(1)
+        from .servers.rest import run_rest_server
+
+        run_rest_server(host=host, port=port)
 
 
 if __name__ == "__main__":
