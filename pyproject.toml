@@ -34,9 +34,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 
-dependencies = [
-    "httpx>=0.27",
-]
+dependencies = []
 
 [project.optional-dependencies]
 yaml = ["pyyaml>=6.0"]
