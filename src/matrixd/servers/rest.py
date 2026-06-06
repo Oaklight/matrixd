@@ -49,7 +49,7 @@ ROUTES: list[Route] = [
     ("GET",  r"/api/profile/(?P<user_id>[^/]+)/displayname$",
      "handle_get_display_name"),
     ("GET",  r"/api/health$",                         "handle_health"),
-    ("GET",  r"/openapi\\.json$",                     "handle_openapi"),
+    ("GET",  r"/openapi\.json$",                      "handle_openapi"),
 ]
 
 
@@ -299,7 +299,10 @@ def run_rest_server(
     loop = asyncio.new_event_loop()
     client = loop.run_until_complete(_create_client(config))
 
-    handler_class = partial(_make_handler, client=client, config=config, loop=loop)
+    # Build a handler subclass with client/config/loop baked in.
+    # BaseHTTPRequestHandler.__init__ dispatches the request immediately,
+    # so attributes must be set before super().__init__ runs.
+    handler_class = _make_handler_class(client, config, loop)
     server = HTTPServer((host, port), handler_class)
     logger.info("REST server listening on http://%s:%d", host, port)
     logger.info("OpenAPI spec at http://%s:%d/openapi.json", host, port)
@@ -323,15 +326,22 @@ async def _create_client(config: Config) -> MatrixClient:
     return client
 
 
-def _make_handler(
-    *args: Any,
+def _make_handler_class(
     client: MatrixClient,
     config: Config,
     loop: asyncio.AbstractEventLoop,
-    **kwargs: Any,
-) -> MatrixHandler:
-    handler = MatrixHandler(*args, **kwargs)
-    handler.client = client
-    handler.config = config
-    handler._loop = loop
-    return handler
+) -> type[MatrixHandler]:
+    """Create a MatrixHandler subclass with client/config/loop bound as class attrs.
+
+    BaseHTTPRequestHandler.__init__ calls handle() → dispatch synchronously,
+    so instance attributes set after __init__ are too late. Class-level attrs
+    are available immediately.
+    """
+
+    class BoundHandler(MatrixHandler):
+        pass
+
+    BoundHandler.client = client  # type: ignore[attr-defined]
+    BoundHandler.config = config  # type: ignore[attr-defined]
+    BoundHandler._loop = loop  # type: ignore[attr-defined]
+    return BoundHandler
