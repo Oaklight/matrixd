@@ -74,34 +74,36 @@ class Policy:
 
     room_policies: dict[str, RoomPolicy] = field(default_factory=dict)
     default_policy: RoomPolicy = RoomPolicy.LURK
+    max_cached_events: int = 1000
+    _event_senders: dict[str, str] = field(default_factory=dict, init=False)
 
     def get_room_policy(self, room_id: str) -> RoomPolicy:
         return self.room_policies.get(room_id, self.default_policy)
 
     def should_deliver(self, event: Event, my_user_id: str | None = None) -> bool:
         """Decide whether an event should be delivered."""
-        # Anti-echo: never deliver our own messages
-        if my_user_id and event.sender == my_user_id:
-            return False
-
         policy = self.get_room_policy(event.room_id)
 
-        if policy == RoomPolicy.LURK:
-            return False
+        try:
+            if my_user_id and event.sender == my_user_id:
+                return False
 
-        if policy == RoomPolicy.ALL:
-            return True
+            if policy == RoomPolicy.LURK:
+                return False
 
-        if policy in (RoomPolicy.MENTION_ONLY, RoomPolicy.IMPORTANT):
-            if my_user_id and self._is_mentioned(event, my_user_id):
+            if policy == RoomPolicy.ALL:
                 return True
-            if policy == RoomPolicy.IMPORTANT and self._is_reply_to_me(
-                event, my_user_id
-            ):
-                return True
-            return False
 
-        return False
+            if policy in (RoomPolicy.MENTION_ONLY, RoomPolicy.IMPORTANT):
+                if my_user_id and self._is_mentioned(event, my_user_id):
+                    return True
+                if policy == RoomPolicy.IMPORTANT and self._is_reply_to_me(event, my_user_id):
+                    return True
+                return False
+
+            return False
+        finally:
+            self._remember_event(event)
 
     @staticmethod
     def _is_mentioned(event: Event, my_user_id: str) -> bool:
@@ -117,12 +119,19 @@ class Policy:
             return True
         return False
 
-    @staticmethod
-    def _is_reply_to_me(event: Event, my_user_id: str | None) -> bool:
+    def _is_reply_to_me(self, event: Event, my_user_id: str | None) -> bool:
         """Check if the event is a reply to one of the bot's messages."""
         if not my_user_id or not event.relates_to:
             return False
         in_reply_to = event.relates_to.get("m.in_reply_to", {})
-        # We'd need to look up the original event to check sender.
-        # For now, return False — full implementation needs event cache.
-        return False
+        replied_event_id = in_reply_to.get("event_id")
+        if not replied_event_id:
+            return False
+        return self._event_senders.get(replied_event_id) == my_user_id
+
+    def _remember_event(self, event: Event) -> None:
+        if not event.event_id:
+            return
+        self._event_senders[event.event_id] = event.sender
+        while len(self._event_senders) > self.max_cached_events:
+            self._event_senders.pop(next(iter(self._event_senders)))
