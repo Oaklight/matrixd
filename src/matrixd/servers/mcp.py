@@ -11,7 +11,6 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -76,6 +75,7 @@ mcp_server = FastMCP(
 
 # ── Tools: Identity ──────────────────────────────────────────
 
+
 @mcp_server.tool()
 async def whoami(ctx: Context[ServerSession, AppContext]) -> dict[str, Any]:
     """Verify Matrix credentials and return the authenticated user ID and device ID."""
@@ -86,6 +86,7 @@ async def whoami(ctx: Context[ServerSession, AppContext]) -> dict[str, Any]:
 
 
 # ── Tools: Messaging ─────────────────────────────────────────
+
 
 @mcp_server.tool()
 async def send_message(
@@ -105,7 +106,10 @@ async def send_message(
     """
     try:
         return await _get_client(ctx).send_message(
-            room_id, body, msgtype=msgtype, formatted_body=formatted_body,
+            room_id,
+            body,
+            msgtype=msgtype,
+            formatted_body=formatted_body,
         )
     except MatrixAPIError as e:
         raise ToolError(str(e)) from e
@@ -153,6 +157,7 @@ async def redact_event(
 
 # ── Tools: History ───────────────────────────────────────────
 
+
 @mcp_server.tool()
 async def get_messages(
     room_id: str,
@@ -169,7 +174,9 @@ async def get_messages(
     """
     try:
         return await _get_client(ctx).get_messages(
-            room_id, limit=limit, direction=direction,
+            room_id,
+            limit=limit,
+            direction=direction,
         )
     except MatrixAPIError as e:
         raise ToolError(str(e)) from e
@@ -194,6 +201,7 @@ async def get_event(
 
 
 # ── Tools: Rooms ─────────────────────────────────────────────
+
 
 @mcp_server.tool()
 async def list_rooms(
@@ -234,13 +242,17 @@ async def create_room(
     invite_list = [u.strip() for u in invite.split(",")] if invite else None
     try:
         return await _get_client(ctx).create_room(
-            name=name, topic=topic, preset=preset, invite=invite_list,
+            name=name,
+            topic=topic,
+            preset=preset,
+            invite=invite_list,
         )
     except MatrixAPIError as e:
         raise ToolError(str(e)) from e
 
 
 # ── Tools: Membership ────────────────────────────────────────
+
 
 @mcp_server.tool()
 async def invite_user(
@@ -299,6 +311,7 @@ async def get_members(
 
 
 # ── Tools: State ─────────────────────────────────────────────
+
 
 @mcp_server.tool()
 async def get_room_state(
@@ -369,6 +382,7 @@ async def set_power_level(
 
 # ── Tools: Profile ───────────────────────────────────────────
 
+
 @mcp_server.tool()
 async def get_display_name(
     user_id: str,
@@ -386,6 +400,7 @@ async def get_display_name(
 
 
 # ── Run ──────────────────────────────────────────────────────
+
 
 def run_mcp_server(
     transport: str = "stdio",

@@ -8,8 +8,8 @@ from __future__ import annotations
 import json
 import logging
 
-from ..core.policy import Event
 from .._vendor.httpclient import AsyncClient
+from ..core.policy import Event
 from .base import DeliveryBackend
 
 logger = logging.getLogger(__name__)

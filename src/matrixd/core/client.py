@@ -76,10 +76,16 @@ class MatrixClient:
         return resp
 
     async def _get(
-        self, path: str, *, params: dict[str, Any] | None = None, timeout: float | None = None,
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,
     ) -> Response:
         resp = await self._http.get(
-            f"{self._base}{path}", params=params, **({"timeout": timeout} if timeout else {}),
+            f"{self._base}{path}",
+            params=params,
+            **({"timeout": timeout} if timeout else {}),
         )
         return self._check(resp)
 
@@ -113,14 +119,10 @@ class MatrixClient:
             content["format"] = "org.matrix.custom.html"
             content["formatted_body"] = formatted_body
         return (
-            await self._put(
-                f"/rooms/{_enc(room_id)}/send/m.room.message/{txn_id}", content
-            )
+            await self._put(f"/rooms/{_enc(room_id)}/send/m.room.message/{txn_id}", content)
         ).json()
 
-    async def send_reaction(
-        self, room_id: str, event_id: str, emoji: str
-    ) -> dict[str, Any]:
+    async def send_reaction(self, room_id: str, event_id: str, emoji: str) -> dict[str, Any]:
         """Send a reaction to an event."""
         txn_id = f"react-{int(time.time() * 1e9)}"
         content = {
@@ -130,11 +132,7 @@ class MatrixClient:
                 "key": emoji,
             }
         }
-        return (
-            await self._put(
-                f"/rooms/{_enc(room_id)}/send/m.reaction/{txn_id}", content
-            )
-        ).json()
+        return (await self._put(f"/rooms/{_enc(room_id)}/send/m.reaction/{txn_id}", content)).json()
 
     async def redact(
         self, room_id: str, event_id: str, *, reason: str | None = None
@@ -143,9 +141,7 @@ class MatrixClient:
         txn_id = f"redact-{int(time.time() * 1e9)}"
         body = {"reason": reason} if reason else {}
         return (
-            await self._put(
-                f"/rooms/{_enc(room_id)}/redact/{_enc(event_id)}/{txn_id}", body
-            )
+            await self._put(f"/rooms/{_enc(room_id)}/redact/{_enc(event_id)}/{txn_id}", body)
         ).json()
 
     # ── History ───────────────────────────────────────────────
@@ -170,9 +166,7 @@ class MatrixClient:
         return (await self._get(f"/rooms/{_enc(room_id)}/messages", params=params)).json()
 
     async def get_event(self, room_id: str, event_id: str) -> dict[str, Any]:
-        return (
-            await self._get(f"/rooms/{_enc(room_id)}/event/{_enc(event_id)}")
-        ).json()
+        return (await self._get(f"/rooms/{_enc(room_id)}/event/{_enc(event_id)}")).json()
 
     # ── Rooms ─────────────────────────────────────────────────
 
@@ -212,17 +206,13 @@ class MatrixClient:
     async def invite(self, room_id: str, user_id: str) -> None:
         await self._post(f"/rooms/{_enc(room_id)}/invite", {"user_id": user_id})
 
-    async def kick(
-        self, room_id: str, user_id: str, *, reason: str | None = None
-    ) -> None:
+    async def kick(self, room_id: str, user_id: str, *, reason: str | None = None) -> None:
         body: dict[str, Any] = {"user_id": user_id}
         if reason:
             body["reason"] = reason
         await self._post(f"/rooms/{_enc(room_id)}/kick", body)
 
-    async def ban(
-        self, room_id: str, user_id: str, *, reason: str | None = None
-    ) -> None:
+    async def ban(self, room_id: str, user_id: str, *, reason: str | None = None) -> None:
         body: dict[str, Any] = {"user_id": user_id}
         if reason:
             body["reason"] = reason
@@ -238,12 +228,8 @@ class MatrixClient:
 
     # ── State ─────────────────────────────────────────────────
 
-    async def get_state(
-        self, room_id: str, event_type: str, state_key: str = ""
-    ) -> dict[str, Any]:
-        return (
-            await self._get(f"/rooms/{_enc(room_id)}/state/{event_type}/{state_key}")
-        ).json()
+    async def get_state(self, room_id: str, event_type: str, state_key: str = "") -> dict[str, Any]:
+        return (await self._get(f"/rooms/{_enc(room_id)}/state/{event_type}/{state_key}")).json()
 
     async def set_state(
         self,
@@ -253,9 +239,7 @@ class MatrixClient:
         state_key: str = "",
     ) -> dict[str, Any]:
         return (
-            await self._put(
-                f"/rooms/{_enc(room_id)}/state/{event_type}/{state_key}", content
-            )
+            await self._put(f"/rooms/{_enc(room_id)}/state/{event_type}/{state_key}", content)
         ).json()
 
     async def get_room_name(self, room_id: str) -> str | None:
@@ -271,9 +255,7 @@ class MatrixClient:
     async def get_power_levels(self, room_id: str) -> dict[str, Any]:
         return await self.get_state(room_id, "m.room.power_levels")
 
-    async def set_user_power_level(
-        self, room_id: str, user_id: str, level: int
-    ) -> None:
+    async def set_user_power_level(self, room_id: str, user_id: str, level: int) -> None:
         """Set a single user's power level (read-modify-write)."""
         pl = await self.get_power_levels(room_id)
         pl["users"][user_id] = level
@@ -307,8 +289,8 @@ class MatrixClient:
     async def get_display_name(self, user_id: str) -> str | None:
         try:
             return (
-                await self._get(f"/profile/{_enc(user_id)}/displayname")
-            ).json().get("displayname")
+                (await self._get(f"/profile/{_enc(user_id)}/displayname")).json().get("displayname")
+            )
         except Exception:
             return None
 

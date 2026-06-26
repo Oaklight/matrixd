@@ -14,9 +14,7 @@ import asyncio
 import json
 import logging
 import re
-from functools import partial
-from http import HTTPStatus
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
 from ..core.client import MatrixAPIError, MatrixClient
@@ -30,26 +28,22 @@ logger = logging.getLogger(__name__)
 Route = tuple[str, str, str]  # (method, pattern, handler_name)
 
 ROUTES: list[Route] = [
-    ("GET",  r"/api/whoami$",                         "handle_whoami"),
-    ("GET",  r"/api/rooms$",                          "handle_list_rooms"),
-    ("POST", r"/api/rooms$",                          "handle_create_room"),
-    ("GET",  r"/api/rooms/(?P<room_id>[^/]+)/messages$", "handle_get_messages"),
-    ("POST", r"/api/rooms/(?P<room_id>[^/]+)/send$",     "handle_send_message"),
-    ("POST", r"/api/rooms/(?P<room_id>[^/]+)/react$",    "handle_send_reaction"),
-    ("POST", r"/api/rooms/(?P<room_id>[^/]+)/redact$",   "handle_redact"),
-    ("GET",  r"/api/rooms/(?P<room_id>[^/]+)/members$",  "handle_get_members"),
-    ("GET",  r"/api/rooms/(?P<room_id>[^/]+)/state/(?P<event_type>[^/]+)$",
-     "handle_get_state"),
-    ("PUT",  r"/api/rooms/(?P<room_id>[^/]+)/state/(?P<event_type>[^/]+)$",
-     "handle_set_state"),
-    ("POST", r"/api/rooms/(?P<room_id>[^/]+)/invite$",  "handle_invite"),
-    ("POST", r"/api/rooms/(?P<room_id>[^/]+)/kick$",    "handle_kick"),
-    ("PUT",  r"/api/rooms/(?P<room_id>[^/]+)/power-level$",
-     "handle_set_power_level"),
-    ("GET",  r"/api/profile/(?P<user_id>[^/]+)/displayname$",
-     "handle_get_display_name"),
-    ("GET",  r"/api/health$",                         "handle_health"),
-    ("GET",  r"/openapi\.json$",                      "handle_openapi"),
+    ("GET", r"/api/whoami$", "handle_whoami"),
+    ("GET", r"/api/rooms$", "handle_list_rooms"),
+    ("POST", r"/api/rooms$", "handle_create_room"),
+    ("GET", r"/api/rooms/(?P<room_id>[^/]+)/messages$", "handle_get_messages"),
+    ("POST", r"/api/rooms/(?P<room_id>[^/]+)/send$", "handle_send_message"),
+    ("POST", r"/api/rooms/(?P<room_id>[^/]+)/react$", "handle_send_reaction"),
+    ("POST", r"/api/rooms/(?P<room_id>[^/]+)/redact$", "handle_redact"),
+    ("GET", r"/api/rooms/(?P<room_id>[^/]+)/members$", "handle_get_members"),
+    ("GET", r"/api/rooms/(?P<room_id>[^/]+)/state/(?P<event_type>[^/]+)$", "handle_get_state"),
+    ("PUT", r"/api/rooms/(?P<room_id>[^/]+)/state/(?P<event_type>[^/]+)$", "handle_set_state"),
+    ("POST", r"/api/rooms/(?P<room_id>[^/]+)/invite$", "handle_invite"),
+    ("POST", r"/api/rooms/(?P<room_id>[^/]+)/kick$", "handle_kick"),
+    ("PUT", r"/api/rooms/(?P<room_id>[^/]+)/power-level$", "handle_set_power_level"),
+    ("GET", r"/api/profile/(?P<user_id>[^/]+)/displayname$", "handle_get_display_name"),
+    ("GET", r"/api/health$", "handle_health"),
+    ("GET", r"/openapi\.json$", "handle_openapi"),
 ]
 
 
@@ -64,9 +58,7 @@ def _build_openapi_spec(host: str, port: int) -> dict[str, Any]:
         },
         "servers": [{"url": f"http://{host}:{port}"}],
         "paths": {
-            "/api/whoami": {
-                "get": {"summary": "Verify credentials", "operationId": "whoami"}
-            },
+            "/api/whoami": {"get": {"summary": "Verify credentials", "operationId": "whoami"}},
             "/api/rooms": {
                 "get": {"summary": "List joined rooms", "operationId": "listRooms"},
                 "post": {"summary": "Create a room", "operationId": "createRoom"},
@@ -83,9 +75,7 @@ def _build_openapi_spec(host: str, port: int) -> dict[str, Any]:
             "/api/rooms/{room_id}/invite": {
                 "post": {"summary": "Invite a user", "operationId": "inviteUser"}
             },
-            "/api/health": {
-                "get": {"summary": "Health check", "operationId": "health"}
-            },
+            "/api/health": {"get": {"summary": "Health check", "operationId": "health"}},
         },
     }
 
@@ -157,7 +147,8 @@ class MatrixHandler(BaseHTTPRequestHandler):
 
     def handle_openapi(self) -> None:
         spec = _build_openapi_spec(
-            self.server.server_address[0], self.server.server_address[1],
+            self.server.server_address[0],
+            self.server.server_address[1],
         )
         self._json_response(spec)
 
@@ -178,23 +169,29 @@ class MatrixHandler(BaseHTTPRequestHandler):
         invite = body.get("invite")
         if isinstance(invite, str):
             invite = [u.strip() for u in invite.split(",")]
-        result = self._run_async(self.client.create_room(
-            name=body.get("name"),
-            topic=body.get("topic"),
-            preset=body.get("preset", "private_chat"),
-            invite=invite,
-        ))
+        result = self._run_async(
+            self.client.create_room(
+                name=body.get("name"),
+                topic=body.get("topic"),
+                preset=body.get("preset", "private_chat"),
+                invite=invite,
+            )
+        )
         self._json_response(result, 201)
 
     def handle_get_messages(self, room_id: str) -> None:
-        from urllib.parse import urlparse, parse_qs
+        from urllib.parse import parse_qs, urlparse
 
         qs = parse_qs(urlparse(self.path).query)
         limit = int(qs.get("limit", ["20"])[0])
         direction = qs.get("dir", ["b"])[0]
-        result = self._run_async(self.client.get_messages(
-            room_id, limit=limit, direction=direction,
-        ))
+        result = self._run_async(
+            self.client.get_messages(
+                room_id,
+                limit=limit,
+                direction=direction,
+            )
+        )
         self._json_response(result)
 
     def handle_send_message(self, room_id: str) -> None:
@@ -203,11 +200,14 @@ class MatrixHandler(BaseHTTPRequestHandler):
         if not msg:
             self._error_response(400, "Missing 'body' field")
             return
-        result = self._run_async(self.client.send_message(
-            room_id, msg,
-            msgtype=body.get("msgtype", "m.text"),
-            formatted_body=body.get("formatted_body"),
-        ))
+        result = self._run_async(
+            self.client.send_message(
+                room_id,
+                msg,
+                msgtype=body.get("msgtype", "m.text"),
+                formatted_body=body.get("formatted_body"),
+            )
+        )
         self._json_response(result)
 
     def handle_send_reaction(self, room_id: str) -> None:
@@ -226,9 +226,13 @@ class MatrixHandler(BaseHTTPRequestHandler):
         if not event_id:
             self._error_response(400, "Missing 'event_id'")
             return
-        result = self._run_async(self.client.redact(
-            room_id, event_id, reason=body.get("reason"),
-        ))
+        result = self._run_async(
+            self.client.redact(
+                room_id,
+                event_id,
+                reason=body.get("reason"),
+            )
+        )
         self._json_response(result)
 
     def handle_get_members(self, room_id: str) -> None:
@@ -236,7 +240,7 @@ class MatrixHandler(BaseHTTPRequestHandler):
         self._json_response(members)
 
     def handle_get_state(self, room_id: str, event_type: str) -> None:
-        from urllib.parse import urlparse, parse_qs
+        from urllib.parse import parse_qs, urlparse
 
         qs = parse_qs(urlparse(self.path).query)
         state_key = qs.get("state_key", [""])[0]
@@ -244,7 +248,7 @@ class MatrixHandler(BaseHTTPRequestHandler):
         self._json_response(result)
 
     def handle_set_state(self, room_id: str, event_type: str) -> None:
-        from urllib.parse import urlparse, parse_qs
+        from urllib.parse import parse_qs, urlparse
 
         qs = parse_qs(urlparse(self.path).query)
         state_key = qs.get("state_key", [""])[0]

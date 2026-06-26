@@ -26,11 +26,16 @@ def main(argv: list[str] | None = None) -> None:
         description="Matrix agent daemon — listener, tools, and hooks for AI agents.",
     )
     parser.add_argument(
-        "-c", "--config", dest="config_path", default=None,
+        "-c",
+        "--config",
+        dest="config_path",
+        default=None,
         help="Config file path (default: auto-detect).",
     )
     parser.add_argument(
-        "-v", "--verbose", action="store_true",
+        "-v",
+        "--verbose",
+        action="store_true",
         help="Verbose logging.",
     )
 
@@ -51,20 +56,26 @@ def main(argv: list[str] | None = None) -> None:
     # listen
     listen_p = sub.add_parser("listen", help="Run the /sync listener with policy filtering.")
     listen_p.add_argument(
-        "--delivery", dest="delivery_mode",
-        choices=["stdout", "webhook", "exec"], default=None,
+        "--delivery",
+        dest="delivery_mode",
+        choices=["stdout", "webhook", "exec"],
+        default=None,
         help="Override delivery mode.",
     )
 
     # serve
     serve_p = sub.add_parser("serve", help="Start MCP or REST tool server.")
     serve_p.add_argument(
-        "--mode", choices=["mcp", "rest"], default="mcp",
+        "--mode",
+        choices=["mcp", "rest"],
+        default="mcp",
         help="Server mode.",
     )
     serve_p.add_argument(
-        "--transport", choices=["stdio", "sse", "streamable-http"],
-        default=None, help="MCP transport (default: from config or stdio).",
+        "--transport",
+        choices=["stdio", "sse", "streamable-http"],
+        default=None,
+        help="MCP transport (default: from config or stdio).",
     )
     serve_p.add_argument("--host", default=None, help="Bind host.")
     serve_p.add_argument("--port", type=int, default=None, help="Bind port.")
@@ -110,7 +121,9 @@ def _cmd_send(args: argparse.Namespace) -> None:
 
         async with MatrixClient(cfg.homeserver, cfg.resolve_token()) as client:
             result = await client.send_message(
-                args.room_id, args.message, msgtype=args.msgtype,
+                args.room_id,
+                args.message,
+                msgtype=args.msgtype,
             )
             print(json.dumps(result, indent=2))
 
@@ -182,8 +195,7 @@ def _cmd_serve(args: argparse.Namespace) -> None:
             from .servers.mcp import run_mcp_server
         except ImportError:
             print(
-                "MCP server requires the 'mcp' package. Install with:\n"
-                "  pip install matrixd[mcp]",
+                "MCP server requires the 'mcp' package. Install with:\n  pip install matrixd[mcp]",
                 file=sys.stderr,
             )
             sys.exit(1)
