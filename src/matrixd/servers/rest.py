@@ -31,8 +31,11 @@ ROUTES: list[Route] = [
     ("GET", r"/api/whoami$", "handle_whoami"),
     ("GET", r"/api/rooms$", "handle_list_rooms"),
     ("POST", r"/api/rooms$", "handle_create_room"),
+    ("POST", r"/api/rooms/join/(?P<room_id_or_alias>[^/]+)$", "handle_join_room"),
+    ("POST", r"/api/rooms/(?P<room_id>[^/]+)/leave$", "handle_leave_room"),
     ("GET", r"/api/rooms/(?P<room_id>[^/]+)/messages$", "handle_get_messages"),
     ("POST", r"/api/rooms/(?P<room_id>[^/]+)/send$", "handle_send_message"),
+    ("PUT", r"/api/rooms/(?P<room_id>[^/]+)/edit/(?P<event_id>[^/]+)$", "handle_edit_message"),
     ("POST", r"/api/rooms/(?P<room_id>[^/]+)/react$", "handle_send_reaction"),
     ("POST", r"/api/rooms/(?P<room_id>[^/]+)/redact$", "handle_redact"),
     ("GET", r"/api/rooms/(?P<room_id>[^/]+)/members$", "handle_get_members"),
@@ -40,6 +43,7 @@ ROUTES: list[Route] = [
     ("PUT", r"/api/rooms/(?P<room_id>[^/]+)/state/(?P<event_type>[^/]+)$", "handle_set_state"),
     ("POST", r"/api/rooms/(?P<room_id>[^/]+)/invite$", "handle_invite"),
     ("POST", r"/api/rooms/(?P<room_id>[^/]+)/kick$", "handle_kick"),
+    ("POST", r"/api/rooms/(?P<room_id>[^/]+)/unban$", "handle_unban"),
     ("PUT", r"/api/rooms/(?P<room_id>[^/]+)/power-level$", "handle_set_power_level"),
     ("GET", r"/api/profile/(?P<user_id>[^/]+)/displayname$", "handle_get_display_name"),
     ("GET", r"/api/health$", "handle_health"),
@@ -194,6 +198,14 @@ class MatrixHandler(BaseHTTPRequestHandler):
         )
         self._json_response(result)
 
+    def handle_join_room(self, room_id_or_alias: str) -> None:
+        result = self._run_async(self.client.join(room_id_or_alias))
+        self._json_response(result)
+
+    def handle_leave_room(self, room_id: str) -> None:
+        self._run_async(self.client.leave(room_id))
+        self._json_response({"status": "left", "room_id": room_id})
+
     def handle_send_message(self, room_id: str) -> None:
         body = self._read_json()
         msg = body.get("body", "")
@@ -206,6 +218,25 @@ class MatrixHandler(BaseHTTPRequestHandler):
                 msg,
                 msgtype=body.get("msgtype", "m.text"),
                 formatted_body=body.get("formatted_body"),
+                reply_to=body.get("reply_to"),
+                thread_root=body.get("thread_root"),
+            )
+        )
+        self._json_response(result)
+
+    def handle_edit_message(self, room_id: str, event_id: str) -> None:
+        body = self._read_json()
+        new_body = body.get("body", "")
+        if not new_body:
+            self._error_response(400, "Missing 'body' field")
+            return
+        result = self._run_async(
+            self.client.edit_message(
+                room_id,
+                event_id,
+                new_body,
+                msgtype=body.get("msgtype", "m.text"),
+                new_formatted_body=body.get("formatted_body"),
             )
         )
         self._json_response(result)
@@ -273,6 +304,15 @@ class MatrixHandler(BaseHTTPRequestHandler):
             return
         self._run_async(self.client.kick(room_id, user_id, reason=body.get("reason")))
         self._json_response({"status": "kicked", "user_id": user_id})
+
+    def handle_unban(self, room_id: str) -> None:
+        body = self._read_json()
+        user_id = body.get("user_id", "")
+        if not user_id:
+            self._error_response(400, "Missing 'user_id'")
+            return
+        self._run_async(self.client.unban(room_id, user_id))
+        self._json_response({"status": "unbanned", "user_id": user_id})
 
     def handle_set_power_level(self, room_id: str) -> None:
         body = self._read_json()

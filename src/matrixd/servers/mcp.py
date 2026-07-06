@@ -95,6 +95,8 @@ async def send_message(
     ctx: Context[ServerSession, AppContext],
     msgtype: str = "m.text",
     formatted_body: str | None = None,
+    reply_to: str | None = None,
+    thread_root: str | None = None,
 ) -> dict[str, Any]:
     """Send a text message to a Matrix room.
 
@@ -103,6 +105,8 @@ async def send_message(
         body: Message text content.
         msgtype: Message type (default: "m.text"). Other options: "m.notice", "m.emote".
         formatted_body: Optional HTML-formatted body for rich messages.
+        reply_to: Event ID to reply to.
+        thread_root: Thread root event ID for threaded replies.
     """
     try:
         return await _get_client(ctx).send_message(
@@ -110,6 +114,38 @@ async def send_message(
             body,
             msgtype=msgtype,
             formatted_body=formatted_body,
+            reply_to=reply_to,
+            thread_root=thread_root,
+        )
+    except MatrixAPIError as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp_server.tool()
+async def edit_message(
+    room_id: str,
+    event_id: str,
+    new_body: str,
+    ctx: Context[ServerSession, AppContext],
+    msgtype: str = "m.text",
+    new_formatted_body: str | None = None,
+) -> dict[str, Any]:
+    """Edit a previously sent message.
+
+    Args:
+        room_id: Room containing the original message.
+        event_id: Event ID of the message to edit.
+        new_body: Updated message text.
+        msgtype: Message type (default: "m.text").
+        new_formatted_body: Optional updated HTML body.
+    """
+    try:
+        return await _get_client(ctx).edit_message(
+            room_id,
+            event_id,
+            new_body,
+            msgtype=msgtype,
+            new_formatted_body=new_formatted_body,
         )
     except MatrixAPIError as e:
         raise ToolError(str(e)) from e
@@ -224,6 +260,39 @@ async def list_rooms(
 
 
 @mcp_server.tool()
+async def join_room(
+    room_id_or_alias: str,
+    ctx: Context[ServerSession, AppContext],
+) -> dict[str, Any]:
+    """Join a room by ID or alias.
+
+    Args:
+        room_id_or_alias: Room ID ("!abc:server") or alias ("#room:server").
+    """
+    try:
+        return await _get_client(ctx).join(room_id_or_alias)
+    except MatrixAPIError as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp_server.tool()
+async def leave_room(
+    room_id: str,
+    ctx: Context[ServerSession, AppContext],
+) -> str:
+    """Leave a room.
+
+    Args:
+        room_id: Room to leave.
+    """
+    try:
+        await _get_client(ctx).leave(room_id)
+        return f"Left {room_id}"
+    except MatrixAPIError as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp_server.tool()
 async def create_room(
     ctx: Context[ServerSession, AppContext],
     name: str | None = None,
@@ -290,6 +359,25 @@ async def kick_user(
     try:
         await _get_client(ctx).kick(room_id, user_id, reason=reason)
         return f"Kicked {user_id} from {room_id}"
+    except MatrixAPIError as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp_server.tool()
+async def unban_user(
+    room_id: str,
+    user_id: str,
+    ctx: Context[ServerSession, AppContext],
+) -> str:
+    """Unban a user from a room.
+
+    Args:
+        room_id: Room to unban from.
+        user_id: User ID to unban.
+    """
+    try:
+        await _get_client(ctx).unban(room_id, user_id)
+        return f"Unbanned {user_id} from {room_id}"
     except MatrixAPIError as e:
         raise ToolError(str(e)) from e
 
