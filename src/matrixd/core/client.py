@@ -195,6 +195,45 @@ class MatrixClient:
             await self._put(f"/rooms/{_enc(room_id)}/send/m.room.message/{txn_id}", content)
         ).json()
 
+    async def edit_message(
+        self,
+        room_id: str,
+        event_id: str,
+        new_body: str,
+        *,
+        msgtype: str = "m.text",
+        new_formatted_body: str | None = None,
+    ) -> dict[str, Any]:
+        """Edit (replace) a previously sent message.
+
+        Args:
+            room_id: Room containing the original message.
+            event_id: Event ID of the message to edit.
+            new_body: Updated plain-text body.
+            msgtype: Message type (default: "m.text").
+            new_formatted_body: Optional updated HTML body.
+        """
+        txn_id = self._txn_id("edit")
+        new_content: dict[str, Any] = {"msgtype": msgtype, "body": new_body}
+        if new_formatted_body:
+            new_content["format"] = "org.matrix.custom.html"
+            new_content["formatted_body"] = new_formatted_body
+        content: dict[str, Any] = {
+            "msgtype": msgtype,
+            "body": f"* {new_body}",
+            "m.new_content": new_content,
+            "m.relates_to": {
+                "rel_type": "m.replace",
+                "event_id": event_id,
+            },
+        }
+        if new_formatted_body:
+            content["format"] = "org.matrix.custom.html"
+            content["formatted_body"] = f"* {new_formatted_body}"
+        return (
+            await self._put(f"/rooms/{_enc(room_id)}/send/m.room.message/{txn_id}", content)
+        ).json()
+
     async def send_reaction(self, room_id: str, event_id: str, emoji: str) -> dict[str, Any]:
         """Send a reaction to an event."""
         txn_id = self._txn_id("react")
@@ -276,6 +315,18 @@ class MatrixClient:
 
     # ── Membership ────────────────────────────────────────────
 
+    async def join(self, room_id_or_alias: str) -> dict[str, Any]:
+        """Join a room by ID or alias."""
+        return (await self._post(f"/join/{_enc(room_id_or_alias)}")).json()
+
+    async def leave(self, room_id: str) -> None:
+        """Leave a room."""
+        await self._post(f"/rooms/{_enc(room_id)}/leave")
+
+    async def forget(self, room_id: str) -> None:
+        """Forget a room (remove from room list after leaving)."""
+        await self._post(f"/rooms/{_enc(room_id)}/forget")
+
     async def invite(self, room_id: str, user_id: str) -> None:
         await self._post(f"/rooms/{_enc(room_id)}/invite", {"user_id": user_id})
 
@@ -290,6 +341,10 @@ class MatrixClient:
         if reason:
             body["reason"] = reason
         await self._post(f"/rooms/{_enc(room_id)}/ban", body)
+
+    async def unban(self, room_id: str, user_id: str) -> None:
+        """Unban a user from a room."""
+        await self._post(f"/rooms/{_enc(room_id)}/unban", {"user_id": user_id})
 
     async def get_members(self, room_id: str) -> list[str]:
         return list(
