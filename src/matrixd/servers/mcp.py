@@ -293,6 +293,26 @@ async def leave_room(
 
 
 @mcp_server.tool()
+async def forget_room(
+    room_id: str,
+    ctx: Context[ServerSession, AppContext],
+) -> str:
+    """Forget a room (remove from room list after leaving).
+
+    The room must be left first. Forgetting removes it from the
+    user's room list so it no longer appears in joined_rooms.
+
+    Args:
+        room_id: Room to forget.
+    """
+    try:
+        await _get_client(ctx).forget(room_id)
+        return f"Forgot {room_id}"
+    except MatrixAPIError as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp_server.tool()
 async def create_room(
     ctx: Context[ServerSession, AppContext],
     name: str | None = None,

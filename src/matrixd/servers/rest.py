@@ -33,6 +33,7 @@ ROUTES: list[Route] = [
     ("POST", r"/api/rooms$", "handle_create_room"),
     ("POST", r"/api/rooms/join/(?P<room_id_or_alias>[^/]+)$", "handle_join_room"),
     ("POST", r"/api/rooms/(?P<room_id>[^/]+)/leave$", "handle_leave_room"),
+    ("POST", r"/api/rooms/(?P<room_id>[^/]+)/forget$", "handle_forget_room"),
     ("GET", r"/api/rooms/(?P<room_id>[^/]+)/messages$", "handle_get_messages"),
     ("POST", r"/api/rooms/(?P<room_id>[^/]+)/send$", "handle_send_message"),
     ("PUT", r"/api/rooms/(?P<room_id>[^/]+)/edit/(?P<event_id>[^/]+)$", "handle_edit_message"),
@@ -205,6 +206,10 @@ class MatrixHandler(BaseHTTPRequestHandler):
     def handle_leave_room(self, room_id: str) -> None:
         self._run_async(self.client.leave(room_id))
         self._json_response({"status": "left", "room_id": room_id})
+
+    def handle_forget_room(self, room_id: str) -> None:
+        self._run_async(self.client.forget(room_id))
+        self._json_response({"status": "forgotten", "room_id": room_id})
 
     def handle_send_message(self, room_id: str) -> None:
         body = self._read_json()
