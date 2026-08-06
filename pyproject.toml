@@ -38,7 +38,7 @@ dependencies = []
 
 [project.optional-dependencies]
 yaml = ["pyyaml>=6.0"]
-mcp = ["mcp>=1.0"]
+mcp = ["mcp>=1.8"]
 api = ["fastapi>=0.110", "uvicorn>=0.29"]
 full = ["matrixd[yaml,mcp,api]"]
 dev = [
