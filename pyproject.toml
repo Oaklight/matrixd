@@ -78,3 +78,6 @@ exclude = ["src/matrixd/_vendor/"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.zerodep]
+vendor-dir = "src/matrixd/_vendor"
